@@ -17,6 +17,7 @@ GitHub Pages가 활성화된 뒤 아래 링크로 설치합니다.
 - Dashboard: https://engwoo09.github.io/mercari-work-lite-dashboard/
 - Opener userscript: https://engwoo09.github.io/mercari-work-lite-dashboard/interplanet-dashboard.user.js
 - Snippets userscript: https://engwoo09.github.io/mercari-work-lite-dashboard/snippets.user.js
+- Bookmarklet installer: https://engwoo09.github.io/mercari-work-lite-dashboard/bookmarklet.html
 
 ## 운영 메모
 
