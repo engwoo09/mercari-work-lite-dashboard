@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Mercari Work Dashboard Opener
 // @namespace    https://mercari.local/work-dashboard
-// @version      1.4.1
+// @version      1.4.2
 // @description  Interplanet 주문목록에서 Mercari 업무 대시보드를 엽니다.
 // @match        *://cs.interplanet.co.kr/cpanel/manager/mercari*
 // @match        *://cs30.interplanet.co.kr/cpanel/manager/mercari*
@@ -19,7 +19,7 @@
   const ID_RE = /m\d{9,12}|(?=[A-Za-z0-9]{18,32}\b)(?=[A-Za-z0-9]*[A-Za-z])(?=[A-Za-z0-9]*\d)[A-Za-z0-9]{18,32}/g;
   const SCRIPT_ID = 'opener';
   const SCRIPT_NAME = 'Mercari Work Dashboard Opener';
-  const SCRIPT_VERSION = '1.4.1';
+  const SCRIPT_VERSION = '1.4.2';
   const CONFIRM_TARGET_COUNT = 12;
   const DASHBOARD_HOSTS = new Set(['engwoo09.github.io']);
 
@@ -47,34 +47,39 @@
     return Array.from(new Set(values.map((value) => String(value || '').trim()).filter(Boolean)));
   }
 
+  function isVisible(el) {
+    if (!el || !el.isConnected) return false;
+    const style = window.getComputedStyle(el);
+    if (style.display === 'none' || style.visibility === 'hidden') return false;
+    return Boolean(el.getClientRects().length);
+  }
+
   function rowForCheckbox(checkbox) {
-    return checkbox.closest('tr')
-      || checkbox.closest('[role=row]')
-      || checkbox.closest('[class*=row]')
-      || checkbox.closest('li')
-      || checkbox.closest('div')
-      || checkbox.parentElement;
+    const row = checkbox.closest('tr') || checkbox.closest('[role=row]') || checkbox.closest('li');
+    if (!row || !isVisible(row)) return null;
+    return row;
   }
 
   function checkboxLooksLikeBulkSelector(checkbox) {
     const row = rowForCheckbox(checkbox);
     if (!row) return true;
     const inputCount = row.querySelectorAll('input[type=checkbox]').length;
-    if (inputCount > 1) return true;
     const headerCell = checkbox.closest('th, thead');
     if (headerCell) return true;
     const text = row.innerText || row.textContent || '';
     ID_RE.lastIndex = 0;
-    const hasMercariId = ID_RE.test(text);
+    const idCount = unique(text.match(ID_RE) || []).length;
     ID_RE.lastIndex = 0;
     const hasMercariLink = collectMercariLinks(row, 'item').length || collectMercariLinks(row, 'transaction').length;
-    if (hasMercariId || hasMercariLink) return false;
+    if ((idCount > 0 && idCount <= 3) || hasMercariLink) return false;
+    if (inputCount > 1 || idCount > 3) return true;
     const aria = `${checkbox.getAttribute('aria-label') || ''} ${checkbox.title || ''}`.toLowerCase();
     return /all|select|전체|선택/.test(aria);
   }
 
   function checkedOrderCheckboxes() {
     return Array.from(document.querySelectorAll('input[type=checkbox]:checked'))
+      .filter(isVisible)
       .filter((checkbox) => !checkboxLooksLikeBulkSelector(checkbox));
   }
 
@@ -102,14 +107,25 @@
       .filter((href) => linkMatchesMode(href, mode));
   }
 
+  function idsFromRow(row) {
+    let ids = [];
+    collectTextAndLinks(row).forEach((text) => {
+      const matches = text.match(ID_RE);
+      if (matches) ids = ids.concat(matches);
+    });
+    return unique(ids);
+  }
+
+  function rowLooksTooBroad(row) {
+    return idsFromRow(row).length > 3 || row.querySelectorAll('input[type=checkbox]').length > 1;
+  }
+
   function extractIds() {
     let ids = [];
     checkedOrderCheckboxes().forEach((checkbox) => {
       const row = rowForCheckbox(checkbox);
-      collectTextAndLinks(row).forEach((text) => {
-        const matches = text.match(ID_RE);
-        if (matches) ids = ids.concat(matches);
-      });
+      if (!row || rowLooksTooBroad(row)) return;
+      ids = ids.concat(idsFromRow(row));
     });
     return unique(ids);
   }
@@ -121,7 +137,9 @@
       return [];
     }
     checked.forEach((checkbox) => {
-      urls = urls.concat(collectMercariLinks(rowForCheckbox(checkbox), mode));
+      const row = rowForCheckbox(checkbox);
+      if (!row || rowLooksTooBroad(row)) return;
+      urls = urls.concat(collectMercariLinks(row, mode));
     });
 
     const ids = extractIds();

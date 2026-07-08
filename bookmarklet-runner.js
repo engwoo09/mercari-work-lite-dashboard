@@ -11,13 +11,17 @@
     return Array.from(new Set(values.map((value) => String(value || '').trim()).filter(Boolean)));
   }
 
+  function isVisible(el) {
+    if (!el || !el.isConnected) return false;
+    const style = window.getComputedStyle(el);
+    if (style.display === 'none' || style.visibility === 'hidden') return false;
+    return Boolean(el.getClientRects().length);
+  }
+
   function rowForCheckbox(checkbox) {
-    return checkbox.closest('tr')
-      || checkbox.closest('[role=row]')
-      || checkbox.closest('[class*=row]')
-      || checkbox.closest('li')
-      || checkbox.closest('div')
-      || checkbox.parentElement;
+    const row = checkbox.closest('tr') || checkbox.closest('[role=row]') || checkbox.closest('li');
+    if (!row || !isVisible(row)) return null;
+    return row;
   }
 
   function linkMatchesMode(href, targetMode) {
@@ -40,16 +44,18 @@
     if (checkbox.closest('th, thead')) return true;
     const text = row.innerText || row.textContent || '';
     ID_RE.lastIndex = 0;
-    const hasMercariId = ID_RE.test(text);
+    const idCount = unique(text.match(ID_RE) || []).length;
     ID_RE.lastIndex = 0;
     const hasMercariLink = collectMercariLinks(row, 'item').length || collectMercariLinks(row, 'transaction').length;
-    if (hasMercariId || hasMercariLink) return false;
+    if ((idCount > 0 && idCount <= 3) || hasMercariLink) return false;
+    if (row.querySelectorAll('input[type=checkbox]').length > 1 || idCount > 3) return true;
     const aria = `${checkbox.getAttribute('aria-label') || ''} ${checkbox.title || ''}`.toLowerCase();
     return /all|select|전체|선택/.test(aria);
   }
 
   function checkedOrderCheckboxes() {
     return Array.from(document.querySelectorAll('input[type=checkbox]:checked'))
+      .filter(isVisible)
       .filter((checkbox) => !checkboxLooksLikeBulkSelector(checkbox));
   }
 
@@ -64,6 +70,19 @@
     return parts;
   }
 
+  function idsFromRow(row) {
+    let ids = [];
+    collectTextAndLinks(row).forEach((text) => {
+      const matches = text.match(ID_RE);
+      if (matches) ids = ids.concat(matches);
+    });
+    return unique(ids);
+  }
+
+  function rowLooksTooBroad(row) {
+    return idsFromRow(row).length > 3 || row.querySelectorAll('input[type=checkbox]').length > 1;
+  }
+
   function urlForId(id, targetMode) {
     if (/^[A-Za-z0-9]{18,32}$/.test(id) && !/^m\d{9,12}$/i.test(id)) return `${MERCARI_URL}/shops/product/${id}`;
     if (targetMode === 'item') return `${MERCARI_URL}/item/${id}`;
@@ -73,10 +92,9 @@
   function extractIds(checkboxes) {
     let ids = [];
     checkboxes.forEach((checkbox) => {
-      collectTextAndLinks(rowForCheckbox(checkbox)).forEach((text) => {
-        const matches = text.match(ID_RE);
-        if (matches) ids = ids.concat(matches);
-      });
+      const row = rowForCheckbox(checkbox);
+      if (!row || rowLooksTooBroad(row)) return;
+      ids = ids.concat(idsFromRow(row));
     });
     return unique(ids);
   }
@@ -86,7 +104,9 @@
     const checked = checkedOrderCheckboxes();
     if (!checked.length) return [];
     checked.forEach((checkbox) => {
-      urls = urls.concat(collectMercariLinks(rowForCheckbox(checkbox), targetMode));
+      const row = rowForCheckbox(checkbox);
+      if (!row || rowLooksTooBroad(row)) return;
+      urls = urls.concat(collectMercariLinks(row, targetMode));
     });
     const ids = extractIds(checked);
     urls = urls.concat(ids.map((id) => urlForId(id, targetMode)));
